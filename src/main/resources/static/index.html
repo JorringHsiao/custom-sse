@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SSE Test</title>
+    <script src="js/jquery.min.js"></script>
+    <script src="js/axios.min.js"></script>
+    <script src="js/custom-sse.js"></script>
+    <style>
+        .code-area {
+            width: 800px;
+            height: 550px;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <input type="radio" id="sse-type-0" name="sse-type" value="0" onclick="selectTextarea(0)" checked><label for="sse-type-0">原生SSE</label>
+    <input type="radio" id="sse-type-1" name="sse-type" value="1" onclick="selectTextarea(1)"><label for="sse-type-1">自定义SSE(xhr)</label>
+    <input type="radio" id="sse-type-2" name="sse-type" value="2" onclick="selectTextarea(2)"><label for="sse-type-2">自定义SSE(axios)</label>
+    <input type="radio" id="sse-type-3" name="sse-type" value="3" onclick="selectTextarea(3)"><label for="sse-type-3">百分比进度demo(axios)</label>
+    <button id="run" onclick="run()" style="margin-left: 30px">运行</button>
+    <br><br>
+    <textarea id="code-0" class="code-area" style="display: none"></textarea>
+    <textarea id="code-1" class="code-area" style="display: none"></textarea>
+    <textarea id="code-2" class="code-area" style="display: none"></textarea>
+    <textarea id="code-3" class="code-area" style="display: none"></textarea>
+    <p>👇👇👇 运行后，在这里输出 👇👇👇</p>
+    <div id="output">
+
+    </div>
+    <script>
+
+        function loadDemoCode(url, containerId) {
+            $.ajax({
+                url: url,
+                dataType: "text",
+                success: function(res) {
+                    $('#'+containerId).val(res)
+                }
+            })
+        }
+
+        let curSseType = 0
+
+        function selectTextarea(type) {
+            curSseType = type
+            $('.code-area').css('display', 'none')
+            $('#code-' + type).css('display', 'block')
+        }
+
+        function output(str) {
+            console.log(str)
+            $('#output').append(document.createTextNode(str))
+            $('#output').append(document.createElement("br"))
+        }
+
+        function run() {
+            $('#output').text('')
+            eval($('#code-' + curSseType).val())
+        }
+
+        $(document).ready(function() {
+            loadDemoCode('/js/demo/event-source.js', 'code-0')
+            loadDemoCode('/js/demo/custom-sse-xhr.js', 'code-1')
+            loadDemoCode('/js/demo/custom-sse-axios.js', 'code-2')
+            loadDemoCode('/js/demo/demo001.js', 'code-3')
+
+            selectTextarea(0)
+        });
+    </script>
+</body>
+</html>
