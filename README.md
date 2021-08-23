@@ -85,15 +85,15 @@ SSE 到底有什么用呢？
 如果是单纯的客户端浏览器通过EventSource不断接收来自服务端的消息的场景，这可能是不错的特点。
 但对于“任务型”的接口或需要“幂等”的这种不需要自动重新连接（请求）的接口，改造成“标准SSE”恐怕不合适。
 
-EventSource没有提供连接结束后的回调，也就没办法在第一次请求结束后也没有提供连接前的回调，因此也没办法做到第二次连接前手动关闭。
+EventSource没有提供连接结束后的回调，也就没办法在第一次请求结束后手动关闭；也没有提供连接前的回调，因此也没办法做到第二次连接前手动关闭。
 
-如果与后端协商确定以特定的事件消息内容作为关闭EventSource的信号，那么当
+如果与后端协商确定以特定的事件消息内容作为关闭EventSource的信号，如果
 + 连接断开、重连；
-+ 服务端异常未处理妥当，在结束之前就因其它的异常抛出；
++ 服务端在结束之前就出现了异常，并且异常没有被catch到；
 
-服务端无法发送“关闭”事件消息，导致前端EventSource将无法关闭，一直请求。
+服务端就无法发送“关闭”事件消息，导致前端EventSource将无法关闭，一直请求。
 
-## 👊 手撕 SSE
+## 💪 手撕 SSE
 ### “推”什么
 服务端设置HTTP响应头。
 ```
@@ -103,7 +103,8 @@ Content-Type: text/event-stream
 + 每一个事件消息之间用两个换行 `\n\n` 分隔
 + 每个事件消息由多个键值对组成
 + 键和值用冒号 `:` 分隔
-+ 键，即字段，有四个可取值，分别为：`data`, `event`, `id`, `retry`
++ 键，即字段，有四个可取值，分别为：`data`, `event`, `id`, `retry`   
+（每个字段的含义与用法自己去查吧，这里不解释了哈）
 + 每个键值对之间用一个换行 `\n` 分隔
 + 此外，还可以以冒号 `:` 作为行的开头，该行表示注释
 
@@ -117,7 +118,7 @@ Content-Type: text/event-stream
 + flush - 对“流”进行刷新，一般是将缓存中的内容发送到客户端（可能有些语言的“流”在写数据的时候就已经flush了）
 + close - 关闭“流”
 
-眼睛犀利的同学可能已经看出来了，没错，就是它，最长那个 `flush`，先记住它，等会儿再叫它出来。
+眼睛犀利的同学可能已经看出来了，就是那个 `flush`，先记住它，等会儿再叫它出来。
 
 “推”不就是将“事件”的文本数据包写（write）到“流”，并且刷（flush）一下它么！搞定！So Easy！妈妈再也不用担心了！
 
@@ -158,7 +159,8 @@ xhr.send()
 
 > 📢 喂！flush 出来啦！
 
-XMLHttpRequest.readyState = 3 的时候比较特殊，表示正在接收服务端返回的数据。  
+XMLHttpRequest.readyState = 3 的时候比较特殊，表示正在接收服务端返回的数据。 
+ 
 **每当服务端刷（flush）一下，回调方法 XMLHttpRequest.onreadystatechange 就会被执行一次。**
 
 > ✌ 这不就破案了吗！！！
@@ -189,7 +191,7 @@ message
 {"message": "hello world 2"}
 ```
 
-大概思路如下代码
+大概思路如下
 ```javascript
 const xhr = new XMLHttpRequest()
 xhr.open('GET', '/sse?param=xxx', true)
@@ -205,6 +207,7 @@ const listeners = {
     }
 }
 xhr.onreadystatechange = function() {
+    // 等于3时，服务端每flush一次，xhr都触发一次回调
     if (xhr.readyState >= 3) {
         const text = xhr.responseText
         let nextIndex = -1
@@ -239,16 +242,17 @@ xhr.send()
 > 📢 喂！axios 出来啦！
 
 使用 `axios` 时，为了做统一的鉴权处理，会在拦截器上设置请求头、Token 之类的。SSE也是基于HTTP实现的，请求到后端同样需要鉴权。
-因此需要在 `axios` 的基础上实现自定义的SSE。
+因此需要在 `axios` 的基础上实现自定义的SSE，否则鉴权部分的代码需要维护两份（如果用xhr实现SSE的话）。
 
-本人后端，看了一下 `axios` 的源码，总结一下，大概就是一个“接口”或“框架”的东西吧，在浏览器中适配 `XMLHttpRequest`，在 Node 中适配 `http`。  
+看了一下 `axios` 的源码，总结一下，大概就是一个“接口”或“框架”的东西吧，在浏览器中适配 `XMLHttpRequest`，在 Node 中适配 `http`。  
+
 `axios` 已经对 `XMLHttpRequest` 进行了封装，没办法以 `XMLHttpRequest.onreadystatechange` 作为切入点，实现自己的SSE。
 
 > 还没结束呢！有希望！
 
 再继续看了下的源码，发现了一个看起来挺有希望的参数 `onDownloadProgress`。  
 
-> 为什么说看起来挺有希望的呢？看名字，第一感觉，很明显是要来处理“下载文件”的，大概率也是提供一个回调来弄下载进度的东西。  
+> 为什么说看起来挺有希望的呢？看名字，第一感觉，很明显是要来处理“下载文件”的，应该是一个要来弄下载进度条的回调吧。  
 >
 > 根据经验，要实现下载进度，首先需要知道文件的大小，对应响应头的 `Content-Length`，而当前下载了多少，那也只能从响应体得到它的长度吧？  
 >
@@ -273,23 +277,33 @@ module.exports = function xhrAdapter(config) {
 
 XMLHttpRequest 的 progress 事件监听器是在 `XMLHttpRequest.readyState` = `3` 时被回调的方法，也就是说，下面两种写法是一样效果的。
 ```javascript
-function doSomething() {
-    console.log(xhr)
-}
-
 // case 1
-xhr.addEventListener('progress', doSomething)
+xhr.addEventListener('progress', e => {
+    console.log(e.currentTarget)
+})
 
 // case 2
 xhr.onreadystatechange = function() {
     if (xhr.readyState === 3) {
-        doSomething()
+        console.log(xhr)
     }
 }
 ```
 
+`XMLHttpRequest` 有 `abort`, `error`, `load`, `loadend`, `loadstart`, `progress`, `timeout` 这些事件，
+事件监听器（回调）会传入一个 `ProgressEvent` 事件对象, 而 `ProgressEvent.currentTarget` 就是 `XMLHttpRequest` 实例对象，
+那么就可以获取到 `XMLHttpRequest.responseText` 了。
+
 > 🙊 哇噢！  
 > 🙊 哇噢！  
 > 🙊 哇噢！  
 
-不用再多说什么了吧！太明显了吧！赶紧clone下来玩玩吧！
+赶紧clone下来玩玩吧！
+
+> 📍 我的疑问？？？
+
+因为没看过 `EventSource` 的源码，不知道是如何处理 “响应流” 的？  
+
+不知道有没有哪位同学发现，通过 `XMLHttpRequest` 实现 SSE 是存在 BUG 的，因为 `XMLHttpRequest.responseText` 保存着当前请求的所有响应内容。  
+如果连接不断开，请求不结束，服务端一直推送事件消息，那么 `XMLHttpRequest.responseText` 将会越来越大。因此基于 `XMLHttpRequest` 实现的 SSE
+不适用于 “无限流”，仅适用于有限的、不太大的响应内容（事件消息）。有解决方案的前端大佬们~吱~一声呗！
